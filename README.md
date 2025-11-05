@@ -1,84 +1,156 @@
-Supplementary Materials for: Measuring What Matters: A Forward-Engineered Approach to Causal Inference with Endogenous Staggered Adoption
+# Measuring What Matters: A Forward-Engineered Approach to Causal Inference with Endogenous Staggered Adoption
 
-This repository contains the full analysis code and pre-computed results for the analysis presented at:
-[CODE@MIT] on [11.15.2025].
+**Supplementary Materials**
 
-The raw data for this project is private and is not included. However, this repository provides all scripts, code, and final outputs for full transparency and verification of the workflow.
+This repository contains the complete analysis code and pre-computed results for the research presented at [CODE@MIT] on November 15, 2025.
 
-1. Repository Structure
+> **Note on Data:** The raw data for this project is confidential and not included in this repository. However, all scripts, code, and final outputs are provided for full transparency and verification of the analytical workflow.
 
-/src/: All source code, including Python (.py) and Quarto (.qmd) analysis scripts.
+---
 
-/results/: All pre-computed tabular outputs (e.g., .csv files) for the three different sensitivity thresholds (70pct, 80pct, 90pct).
+## 📁 Repository Structure
 
-/figures/: All pre-computed plots (e.g., .png files) for the three sensitivity thresholds.
+```
+├── src/                    # Source code (Python .py and Quarto .qmd files)
+├── results/                # Pre-computed tables (.csv) by sensitivity threshold
+│   ├── 70pct/             # Results for 70% threshold
+│   ├── 80pct/             # Primary results (80% threshold)
+│   └── 90pct/             # Results for 90% threshold
+├── figures/                # Pre-computed plots (.png) by sensitivity threshold
+│   ├── 70pct/
+│   ├── 80pct/
+│   └── 90pct/
+├── docs/                   # Extended abstract, references.bib, and supporting docs
+├── data/                   # (Empty) Placeholder for private raw data
+├── requirements.txt        # Python dependencies
+└── renv.lock              # R package dependencies
+```
 
-/docs/: The extended abstract, references.bib, and other supporting documents.
+---
 
-/data/: This folder is intentionally empty in the repository. The original raw data is private and was stored here locally to run the analysis.
+## 🔍 Navigating the Results
 
-requirements.txt: A list of required Python packages (pip install -r requirements.txt).
+While the full pipeline cannot be re-run without access to the private data, you can inspect all code and pre-computed outputs.
 
-renv.lock: A list of required R packages (renv::restore()).
+### Key Files
 
-2. How to Navigate These Results
+**Primary Analysis (80% threshold):**
+- Summary table: `./results/80pct/all_results_summary.csv`
+- Rendered report: `./results/80pct/02_analysis_revised.html`
+- Figures: `./figures/80pct/`
 
-While you cannot re-run the full pipeline without the private data, you can inspect the complete code and all of its final, pre-computed outputs.
+**Sensitivity Analyses:**
+- 70% threshold: `./results/70pct/` and `./figures/70pct/`
+- 90% threshold: `./results/90pct/` and `./figures/90pct/`
 
-The analysis code that generates all results is in /src/.
+---
 
-The final outputs (tables and figures) are in /results/ and /figures/, organized by the onset detection threshold:
+## 🔄 Analysis Pipeline
 
-./results/80pct/: The primary results (80% onset threshold).
+The workflow consists of three sequential steps located in `/src/`:
 
-./figures/80pct/: The primary plots (80% onset threshold).
+### Step 1: Data Preparation
+**`01_revised_data_preparation.py`**
+- Processes raw data (private)
+- Implements effect onset detection algorithm
+- Generates intermediate `.parquet` analysis datasets
 
-./results/70pct/ & ./figures/70pct/: Sensitivity analysis (70% threshold).
+### Step 2: Causal Analysis
+**`02_analysis_revised.qmd`**
+- Loads `.parquet` files from Step 1
+- Runs causal models (DiD, HonestDiD)
+- Saves model objects, plots, and result tables
 
-./results/90pct/ & ./figures/90pct/: Sensitivity analysis (90% threshold).
+### Step 3: Meta-Analysis
+**`03_analysis_revised.qmd`**
+- Loads results from Step 2
+- Generates meta-analysis plots and summary tables
 
-For example, the main summary table for the primary analysis is located at:
-./results/80pct/all_results_summary.csv
+---
 
-The rendered HTML reports, which show the code and output side-by-side, are also in their respective folders (e.g., ./results/80pct/02_analysis_revised.html).
+## 🚀 Replication Instructions
 
-3. Workflow & Replication
+### Prerequisites
 
-The analysis is a 3-step pipeline found in /src/:
+Install dependencies:
 
-01_revised_data_preparation.py: This script takes the (private) raw data, runs the core effect onset detection algorithm, and generates all intermediate .parquet analysis datasets.
+```bash
+# Python packages
+pip install -r requirements.txt
 
-02_analysis_revised.qmd: This Quarto document loads the .parquet files, runs all causal models (DiD, HonestDiD), and saves all model objects, plots, and result tables.
+# R packages
+Rscript -e "renv::restore()"
+```
 
-03_analysis_revised.qmd: This final Quarto document loads the results from step 2 to generate the meta-analysis plots and summary tables.
+### Execution
 
-Execution Commands
+To generate outputs for the primary analysis (80% threshold), run the following commands in order:
 
-To generate all outputs for a single sensitivity run (e.g., the primary 0.8 threshold), you must execute the following 11 commands from your terminal in this order.
+#### 1. Run Data Preparation Scripts (9 commands)
 
-Step 1: Run the 9 Python Data Prep Scripts
-
-# === 1. Main Analysis (1 command for all 5 verticals) ===
+**Main Analysis:**
+```bash
 python src/01_revised_data_preparation.py --method effect_onset --onset_threshold 0.8 --placebo_type none
+```
 
-# === 2. Pre-Period Placebos (5 commands) ===
+**Pre-Period Placebos (5 verticals):**
+```bash
 python src/01_revised_data_preparation.py --method effect_onset --vertical tech --onset_threshold 0.8 --placebo_type pre_period
 python src/01_revised_data_preparation.py --method effect_onset --vertical economie --onset_threshold 0.8 --placebo_type pre_period
 python src/01_revised_data_preparation.py --method effect_onset --vertical achterklap --onset_threshold 0.8 --placebo_type pre_period
 python src/01_revised_data_preparation.py --method effect_onset --vertical Media_en_Cultuur --onset_threshold 0.8 --placebo_type pre_period
 python src/01_revised_data_preparation.py --method effect_onset --vertical goed_nieuws --onset_threshold 0.8 --placebo_type pre_period
+```
 
-# === 3. Other Analyses (3 commands) ===
+**Additional Analyses:**
+```bash
 python src/01_revised_data_preparation.py --method artificial_stagger --vertical tech
 python src/01_revised_data_preparation.py --method naive_launch
 python src/01_revised_data_preparation.py --method thematic_tiers
+```
 
+#### 2. Render Analysis Reports (2 commands)
 
-Step 2: Render the Quarto Analysis Reports
-
-# This command uses the parameter '80pct' to find the data from Step 1
+```bash
 quarto render src/02_analysis_revised.qmd --execute-param onset_pct:80pct
 quarto render src/03_analysis_revised.qmd --execute-param onset_pct:80pct
+```
 
+### Sensitivity Analyses
 
-To generate the outputs for the other runs, repeat this entire process, changing the threshold (e.g., 0.7) and parameter (e.g., 70pct) accordingly.
+To generate results for alternative thresholds (70% or 90%), repeat the entire process with adjusted parameters:
+
+- For 70%: use `--onset_threshold 0.7` and `onset_pct:70pct`
+- For 90%: use `--onset_threshold 0.9` and `onset_pct:90pct`
+
+---
+
+## 📊 Output Files
+
+All pre-computed results are organized by threshold:
+
+- **Tables:** `./results/{threshold}/`
+- **Figures:** `./figures/{threshold}/`
+- **HTML Reports:** `./results/{threshold}/*.html`
+
+---
+
+## 📝 Citation
+
+If you use this code or methodology, please cite:
+
+```bibtex
+[Add your citation here]
+```
+
+---
+
+## 📧 Contact
+
+For questions or issues, please [open an issue](../../issues) or contact [your contact information].
+
+---
+
+## 📄 License
+
+[Specify your license here]
