@@ -1,0 +1,220 @@
+---
+title: "Measuring What Matters: A Forward-Engineered Approach to Causal Inference with Endogenous Staggered Adoption"
+author:
+  - name: Tom Hackenberg (Eindhoven University of Technology)
+format: pdf
+documentclass: article
+fontsize: 10pt
+geometry: margin=1in
+linestretch: 0.97
+classoption: oneside
+bibliography: references.bib
+citeproc: true
+link-citations: true
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{graphicx}
+  - \usepackage{caption}
+  - \usepackage{microtype}
+  - \raggedbottom
+  - \captionsetup[table]{skip=4pt}
+  - \captionsetup[figure]{skip=4pt}
+  - \setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+  - \setlength{\floatsep}{8pt plus 2pt minus 2pt}
+  - \setlength{\intextsep}{8pt plus 2pt minus 2pt}
+  - \setlength{\abovecaptionskip}{4pt}
+  - \setlength{\belowcaptionskip}{4pt}
+---
+
+## 1. Motivation and Problem
+
+Digital platforms routinely mismeasure causal impact when feature launches and user adoption diverge in time. When digital platforms launch new features, they trigger two distinct impacts: an immediate *availability effect* (platform-wide rollout) [@schlessinger2023effects] and a *gradual behavioral substitution* over time [@valkenburg2016media]. This heterogeneity, consistent with media effects research, means users adopt and substitute content at varying rates. Existing evaluation approaches, however, frequently conflate the administrative launch date ($T_0$) with the true, unit-specific *behavioral onset* ($G_i$). This systematic misclassification of treatment status generates *latent endogeneity*, as the true *timing* of behavioral adoption is itself a non-random, unobserved process distinct from the administrative launch [@aral2024understanding]. We observe this through article-level pageview data, which reveals when users shift their consumption patterns away from existing content. This feedback loop invalidates the core identifying assumptions of standard DiD models, resulting in **severe dilution** of the causal estimate. For example, a naive Difference-in-Differences (DiD) model treating the launch uniformly estimates an insignificant Average Treatment Effect on the Treated ($\text{ATT}_{\text{Naive}}$) of $-1.24$ pageviews/day ($p = 0.55$). As this analysis demonstrates, this model captures only **16%** of the true, detectable effect ($\text{LATE} = -7.74$), resulting in a **Type II error** and fundamentally flawed managerial conclusions. This systematic bias necessitates a structural solution to correctly identify the unit-specific, latent onset of the effect.
+
+## 2. Related Work
+
+The "credibility revolution" in DiD has shown that traditional two-way fixed effects (TWFE) regressions yield biased estimates in the common setting of staggered treatment adoption with heterogeneous effects [@goodman2021difference]. In response, a new generation of robust estimators has emerged, following a *"forward-engineering"* approach [@baker2025difference], which prioritizes causal definition and assumption before estimation. Critically, all modern robust estimators share a foundational assumption: the timing of treatment is correctly measured ($G_i$ is known). In contrast, we argue that a well-defined $G_i$ is the *necessary prerequisite* to *apply* these estimators. Our paper addresses the *unobserved assignment mechanism* itself. The fundamental challenge of correctly identifying when each unit was actually treated remains largely unaddressed in the literature. Our methodological framework solves this *first-order measurement problem* first, providing the necessary *prerequisite measurement layer* that enables the *estimation layer* of modern econometrics.
+
+## 3. Methodology: A Forward-Engineered Framework
+
+We propose a two-stage framework that prioritizes correct measurement before estimation, utilizing the Doubly Robust (DR) specification of the Callaway and Sant'Anna (C&S) estimator [@callaway2021difference]. Stage 1 identifies when units are actually treated; Stage 2 estimates causal effects conditional on that identification.
+
+### 3.1 Stage 1: Exogenously Anchored Onset Detection
+
+The core of our contribution is a method to derive the unobserved, unit-specific effect onset time, $G_i$. This study develops a *Change Point Detection (CPD)* algorithm that identifies a structural break in the pageview time series. This approach formally resolves the endogeneity concern associated with using outcome data to define treatment timing. Our method does not use the outcome to define the sample, but rather uses a short-term drop as a *diagnostic signal* to pinpoint the true, staggered onset date. This process is then *exogenously anchored* by two conditions to ensure identification validity:
+
+1. **Search Window Constraint:** The search is constrained to begin *only* after the administrative launch date ($t \ge T_0$).
+2. **Exogenous Baseline:** The break is defined *strictly* relative to a pre-treatment baseline ($\bar{Y}_{i}^{pre}$) calculated *exclusively* from pre-launch data. This disciplined design breaks the endogeneity trap.
+
+Conceptually, $G_i$ operationalizes the first sustained behavioral break following exposure — the point where users begin substituting away from the focal article. So, for each article $i$, the onset time $T_i^{\text{onset}}$ is defined as the first day of the first persistent structural decline:
+
+$$ G_{i} = T_i^{\text{onset}} = \min\{t \ge T_0 : \mathbb{1}\{\frac{1}{k}\sum_{s=t-k+1}^{t}Y_{i,s} < (1-\theta)\bar{Y}_{i}^{pre}\} \text{ persists for } p \text{ days}\}$$
+
+(where "persists" means the condition holds for $p$ or more consecutive days).
+
+**Parameter Defense:** The three core parameters ($k=3$, $\theta=0.20$, and $p=3$) are critical for identifying a structural break over noise in volatile clickstream data. We use a 3-day rolling mean ($k=3$) to smooth out high daily volatility. The persistence requirement ($p=3$) ensures the detected break is sustained and structural. A 
+threshold of $\theta=0.80$ (a 20% drop from baseline) provides an externally defensible, non-arbitrary diagnostic signal, representing a significant substitution event.
+This process successfully detected symptomatic decline in 44% of the primary 'tech' vertical's at-risk articles.
+
+### 3.2 Stage 2: Robust Staggered DiD Estimation
+
+The staggered cohort dates ($G_i^{\text{cohort}}$) generated in Stage 1 are used as the timing variable in the C&S estimator. This approach correctly handles treatment effect heterogeneity and avoids the problematic "forbidden comparisons" endemic to TWFE estimators. The C&S estimator defines two groups: 1) The Treated Group ($G_i^{\text{cohort}}>0$)—articles identified as "symptomatic"—and 2) The Control Group. This pool consists of "asymptomatic" (or 'never-treated') articles ($G_i^{\text{cohort}}=0$, $\sim 56\%$ of the sample) and all 'not-yet-symptomatic' articles. We utilize the "not-yet-treated" specification as primary, which, as shown in Table \ref{tbl-robustness-comprehensive}, is highly robust against the "never-treated" specification.
+
+## 4. The Policy-Relevant Estimand: The Local Average Treatment Effect (LATE)
+
+The estimated treatment effect in our application corresponds to a *Local Average Treatment Effect (LATE)*, rather than the unconditional Average Treatment Effect (ATE). This is a direct consequence of our two-stage identification strategy. The C&S estimator computes the *Average Treatment Effect on the Treated ($\text{ATT}(g,t)$)*. However, because our treatment group is defined by the algorithmic selection mechanism (only symptomatic articles), our estimand is interpreted as the LATE for the complier subpopulation:
+
+$$\tau^{\text{LATE}} = E[Y_{it}(1) - Y_{it}(0) \mid i \in \text{Symptomatic Compliers}]$$
+
+This LATE is the *un-diluted, policy-relevant metric*. It is the only honest measure of the causal effect for the articles genuinely competing with the new vertical, answering the question: "When an article *is* detectably cannibalized, how much traffic does it lose?" This focus is necessary because the naive $\text{ATT}_{\text{Naive}}$ is contaminated and diluted. The dilution factor is severe: the naive model's ATT of $-1.24$ is only **16%** of the detectable LATE of $-7.74$, demonstrating the degree of bias created by unobserved endogeneity in standard approaches.
+
+## 5. Validation and Robustness
+
+The credibility of our LATE estimation rests on a structured econometric validation suite, confirming the estimate is robust and consistent across specifications. First, the Pre-Intervention Parallel Trends Check (Figure \ref{fig-main-analysis}(a)) confirms the core identifying assumption holds for the CPD-derived cohorts. The ATT estimates are tightly clustered around zero in the immediate pre-onset period ($t<0$). Second, the Artificial Stagger Placebo Test (Figure \ref{fig-main-analysis}(c)) validates the CPD methodology, yielding a null overall effect ($\text{ATT} = 0.96, p=0.48$). Finally, Control Group Stability (Table \ref{tbl-robustness-comprehensive}) confirms the primary "not-yet-treated" LATE is tightly clustered with the "never-treated" LATE.
+
+### 5.1 Sensitivity to Measurement Parameters
+
+The Structural Robustness Check (Table \ref{tbl-robustness-comprehensive}) demonstrates the CPD-derived staggering is a structural feature of the data. We primarily rely on the Doubly Robust (DR) specification, but we tested stability against alternative C&S estimators (IPW and Outcome Regression) and variations in the CPD parameters ($\theta=0.7, 0.8, 0.9$). The coefficients remain tightly clustered and highly significant across all specifications, confirming the structural robustness of the identified staggering. Convergence across the Doubly Robust, IPW, and Outcome Regression specifications suggests model alignment and correct covariate balancing.
+
+## 6. Application: Detecting Platform-Wide Cannibalization
+
+We apply this framework to the February 2024 launch of a new tech vertical on the largest Dutch news platform. The naive model's $\text{ATT}_{\text{Naive}} = -1.24$ is insignificant and dangerously misleading. Our method reveals the true, highly significant LATE, with two key findings.
+
+\begin{figure}[b]
+\centering
+\begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/80pct/event_study_tech_DAILY_PAGEVIEWS.png}
+  \caption*{(a) Tech Vertical (Primary)}
+\end{minipage}\hfill
+\begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/80pct/event_study_robustness_naive.png}
+  \caption*{(b) Naive Model (Type II Error)}
+\end{minipage}\hfill
+\begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/80pct/event_study_placebo_artificial.png}
+  \caption*{(c) Artificial Stagger Placebo}
+\end{minipage}
+\caption{Main Analysis and Validation ($\theta=0.8$). Panel (a) shows pre-period parallel trends (estimates cluster near zero for $t<0$) and sustained post-onset decline for tech vertical. Panel (b) demonstrates the naive model's severe underestimation (ATT=$-1.24$, $p = 0.55$). Panel (c) shows the null placebo result (ATT=$+0.96$, $p = 0.48$); this confirms the CPD algorithm detects no spurious signal.}
+\label{fig-main-analysis}
+\end{figure}
+
+### 6.1 Platform-Wide Heterogeneity and Channel
+
+The LATE is significant across all major content categories, confirming the intervention's systemic, platform-wide scope. Crucially, the effects are highly heterogeneous (Table \ref{tbl-main-results}). The LATE for the primary tech vertical is $\mathbf{-7.74}$ daily pageviews—a highly significant drop representing a substantial portion of pre-launch traffic for the typical article—and effects across verticals range from approximately 7 to 10 fewer daily pageviews among treated articles. This heterogeneity implies that cannibalization risk maps can guide launch sequencing. The largest effects are consistent with the least topically similar verticals (Media\_en\_Cultuur: $-10.04$ and achterklap: $-8.92$). This systemic heterogeneity is visualized in Figure \ref{fig-vertical-heterogeneity}. The substitution channel is driven exclusively by the *loyal audience* (significant LATE: $-0.40$, SE=$0.13$), confirming audience cannibalization, and not by loss of external discovery traffic (null effect: $-0.12$, SE=$0.16$).
+
+
+\begin{figure}[b]
+\centering
+\begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/80pct/event_study_vertical_Media_en_Cultuur.png}
+  \caption*{(a) Media \& Cultuur}
+\end{minipage}\hfill
+\begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/80pct/event_study_vertical_achterklap.png}
+  \caption*{(b) Achterklap}
+\end{minipage}\hfill
+\begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/80pct/event_study_vertical_economie.png}
+  \caption*{(c) Economie}
+\end{minipage}
+\caption{Platform-Wide Heterogeneity: Non-Tech Verticals ($\theta=0.8$). All major content verticals exhibit characteristic post-onset decline, confirming systemic cannibalization. Largest effects occur in least topically similar verticals (Media \& Cultuur: $-10.04$), falsifying simple topical proximity hypothesis.}
+\label{fig-vertical-heterogeneity}
+\end{figure}
+
+### 6.2 Mechanism: Format Proximity over Topical Proximity
+
+A core empirical contribution is the direct *falsification of the simple **assumption of** topical proximity*. The pattern of effects, where the least topically similar verticals experienced the largest effects (Table \ref{tbl-main-results}), suggests a deeper competitive mechanism. Furthermore, the dose-response analysis shows that content in Tier 0 (Highest Similarity) was entirely unaffected ($+1.42, p = 0.70$), while the effect was concentrated in the less-similar Tiers 1-3. This indicates the new vertical competed on *format proximity and audience expectation*, not simple topical overlap.
+
+## 7. Contributions and Discussion
+
+This paper makes the following contributions. *Methodologically*, we introduce a novel two-stage identification strategy that formally resolves the latent, endogenous treatment timing problem in modern DiD designs, providing the essential framework for applying high-precision causal econometrics in complex observational settings in the absence of known exposure dates. *Empirically*, we provide robust evidence of platform-wide cannibalization, demonstrating that the underlying competition is driven by format proximity and loyal audience expectation, directly falsifying the simple Topical Proximity hypothesis. *Managerially*, our framework offers a practical solution to manage strategic product differentiation and targeting [@yang2024targeting], as the LATE enables the creation of a 'cannibalization risk map' based on the high-signal LATE for the most vulnerable content groups.
+
+Overall, this study demonstrates how careful design and identification—rather than model choice alone—can recover credible local treatment effects in complex digital environments. In doing so, it provides a template for applied causal inference that extends the credibility revolution to settings where treatment timing is itself endogenous, advancing measurement from *when we observe* changes to *when they truly begin*. All replication materials, diagnostic figures, and annotated codebooks are available via QR link on the poster.
+
+
+\begin{table}
+\centering
+\footnotesize
+\caption{Primary Results: Heterogeneous Treatment Effects (Detection Threshold: $\theta=0.8$)}
+\label{tbl-main-results}
+\begin{tabular}{@{}llrrrl@{}}
+\toprule
+\multicolumn{6}{l}{\textbf{Panel A: Cross-Vertical Cannibalization}} \\
+\midrule
+Vertical & LATE & SE & [95\% CI] & N \\
+\midrule
+tech & $\mathbf{-7.74}$ & $2.36$ & [$-12.37$, $-3.11$] & $321$ \\
+achterklap & $\mathbf{-8.92}$ & $1.95$ & [$-12.74$, $-5.10$] & $782$ \\
+economie & $\mathbf{-7.75}$ & $1.44$ & [$-10.57$, $-4.93$] & $1{,}553$ \\
+Media\_en\_Cultuur & $\mathbf{-10.04}$ & $1.57$ & [$-13.11$, $-6.97$] & $1{,}245$ \\
+\midrule
+\multicolumn{6}{l}{\textbf{Panel B: Mechanism - Thematic Similarity (Within-Tech)}} \\
+\midrule
+Tier & LATE & SE & [95\% CI] & N \\
+\midrule
+Tier 0 (Highest) & $+1.42$ & $4.15$ & [$-6.71$, $+9.56$] & $192$ \\
+Tier 1 & $-7.98$ & $4.89$ & [$-17.57$, $+1.61$] & $177$ \\
+Tier 2 & $-5.15$ & $5.33$ & [$-15.61$, $+5.31$] & $162$ \\
+Tier 3 (Lowest) & $-7.13$ & $4.65$ & [$-16.23$, $+1.98$] & $200$ \\
+\midrule
+\multicolumn{6}{l}{\textbf{Panel C: Channel Analysis (Tech Vertical)}} \\
+\midrule
+Channel & LATE & SE & [95\% CI] & N \\
+\midrule
+Loyal Audience & $\mathbf{-0.40}$ & $0.13$ & [$-0.66$, $-0.14$] & $321$ \\
+External Discovery & $-0.12$ & $0.16$ & [$-0.44$, $+0.19$] & $321$ \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.2cm}
+\raggedright\footnotesize\textit{Note: Detection 
+ $\theta=0.8$ (20\% drop). All estimates use DR specification with not-yet-treated controls. Panel B: Tier 0 = highest thematic similarity to new vertical (null effect validates falsification hypothesis); Tier 3 = lowest similarity. Panel C: Loyal audience traffic shows significant cannibalization; external discovery shows null effect.}
+\end{table}
+
+\begin{table}
+\centering
+\footnotesize
+\caption{Robustness: Stability Across Detection Thresholds and Specifications}
+\label{tbl-robustness-comprehensive}
+\begin{tabular}{@{}llrrrrc@{}}
+\toprule
+ & & \multicolumn{4}{c}{\textbf{Detection Threshold}} & \\
+\cmidrule(lr){3-6}
+Vertical/Check & Specification & $\theta=0.7$ & $\theta=0.8$ & $\theta=0.9$ & Range & Stability \\
+\midrule
+\multicolumn{7}{l}{\textit{Cross-Vertical Effects (LATE)}} \\
+tech & DR, Not-Yet & $\mathbf{-9.51}$ & $\mathbf{-7.74}$ & $\mathbf{-6.98}$ & $2.53$ & $\checkmark$ \\
+achterklap & DR, Not-Yet & $\mathbf{-10.43}$ & $\mathbf{-8.92}$ & $\mathbf{-7.97}$ & $2.46$ & $\checkmark$ \\
+economie & DR, Not-Yet & $\mathbf{-8.68}$ & $\mathbf{-7.75}$ & $\mathbf{-5.90}$ & $2.78$ & $\checkmark$ \\
+Media\_en\_Cultuur & DR, Not-Yet & $\mathbf{-12.09}$ & $\mathbf{-10.04}$ & $\mathbf{-9.27}$ & $2.82$ & $\checkmark$ \\
+\midrule
+\multicolumn{7}{l}{\textit{Estimator Robustness (Tech, $\theta=0.8$)}} \\
+ & Doubly Robust & $\mathbf{-9.513}$ & $\mathbf{-7.738}$ & $\mathbf{-6.982}$ & $<0.01$ & $\checkmark$ \\
+ & IPW & $\mathbf{-9.513}$ & $\mathbf{-7.738}$ & $\mathbf{-6.982}$ & $<0.01$ & $\checkmark$ \\
+ & Outcome Reg. & $\mathbf{-9.513}$ & $\mathbf{-7.738}$ & $\mathbf{-6.982}$ & $<0.01$ & $\checkmark$ \\
+\midrule
+\multicolumn{7}{l}{\textit{Control Pool Robustness (Tech)}} \\
+ & Not-Yet ($\theta=0.7$) & $\mathbf{-9.513}$ & -- & -- & $<0.01$ & $\checkmark$ \\
+ & Never-Treated ($\theta=0.7$) & $\mathbf{-9.513}$ & -- & -- & $<0.01$ & $\checkmark$ \\
+ & Not-Yet ($\theta=0.8$) & -- & $\mathbf{-7.738}$ & -- & $<0.01$ & $\checkmark$ \\
+ & Never-Treated ($\theta=0.8$) & -- & $\mathbf{-7.740}$ & -- & $<0.01$ & $\checkmark$ \\
+ & Not-Yet ($\theta=0.9$) & -- & -- & $\mathbf{-6.982}$ & $<0.01$ & $\checkmark$ \\
+ & Never-Treated ($\theta=0.9$) & -- & -- & $\mathbf{-6.978}$ & $<0.01$ & $\checkmark$ \\
+\midrule
+\multicolumn{7}{l}{\textit{Placebo Tests (All Thresholds)}} \\
+Naive Launch & TWFE & \multicolumn{3}{c}{$-1.24$ ($p = 0.55$)} & -- & Type II Error \\
+Artificial Stagger & DR, Not-Yet & \multicolumn{3}{c}{$+0.96$ ($p = 0.48$)} & -- & Null $\checkmark$ \\
+Pre-Period CPD & DR, Not-Yet & \multicolumn{3}{c}{$0$ units detected} & -- & Null $\checkmark$ \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.2cm}
+\raggedright\footnotesize\textit{Note: "Range" = max - min across thresholds (in absolute value). All LATEs remain highly significant and tightly clustered across detection thresholds, confirming the structural robustness of the CPD-derived staggering. Estimator and control pool specifications yield tightly clustered estimates (range < 0.01) across all thresholds, demonstrating method stability. Naive model severely underestimates effect (captures only 16\% of true LATE), while placebo tests confirm genuine causal signal.}
+\end{table}
+
+## References

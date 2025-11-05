@@ -1,0 +1,195 @@
+---
+title: "Mechanism Analysis: Topical and Format Proximity"
+author: "Analysis Report"
+date: "today"
+format: html
+params:
+  onset_pct: "80pct"
+---
+
+### 0. Setup
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(here)
+library(ggrepel) # For non-overlapping labels
+library(knitr)   # For kable
+library(kableExtra) # For kable_styling
+
+# --- Parameterized Variables ---
+PERCENT <- params$onset_pct
+message(paste("--- Plotting mechanisms for threshold:", PERCENT, "---"))
+
+# --- Dynamic Paths ---
+PROCESSED_DATA_DIR <- here("data", "processed")
+RESULTS_DIR <- here("results", PERCENT)
+FIGURES_DIR <- here("figures", PERCENT) # Save plots to the same folder
+```
+
+### 1. Load Data
+
+```{r}
+#| label: load-data
+#| echo: false
+
+# Load thematic scores (from Python)
+thematic_scores <- read.csv(
+  file.path(PROCESSED_DATA_DIR, "vertical_thematic_scores.csv")
+)
+
+# Load vertical ATT results (from 02_run_did_models.qmd)
+vertical_atts <- read.csv(
+  file.path(RESULTS_DIR, "vertical_att_results.csv")
+)
+
+# Load thematic HTE results (from 02_run_did_models.qmd)
+thematic_tier_atts <- read.csv(
+  file.path(RESULTS_DIR, "thematic_tier_results.csv")
+)
+```
+
+### 2. Descriptive Summary: Treatment Assignment
+This table provides the crucial context for interpreting the LATE, showing what proportion of "at-risk" articles showed detectable symptoms.
+
+```{r}
+#| label: descriptives-table
+#| echo: false
+
+# Load the new article counts file from Python
+vertical_counts <- read.csv(
+  file.path(PROCESSED_DATA_DIR, "vertical_article_counts.csv")
+)
+
+# vertical_atts (loaded in previous chunk) now has N_Treated
+# Join them to create the table
+descriptives_tbl <- vertical_atts %>%
+  select(Vertical, `Detected Onsets (Staggered)` = N_Treated) %>%
+  left_join(vertical_counts, by = "Vertical") %>%
+  rename(`Total "At-Risk" Articles (Naive)` = Total_Articles_Platform) %>%
+  mutate(
+    `Detection Rate (%)` = (`Detected Onsets (Staggered)` / `Total "At-Risk" Articles (Naive)`) * 100
+  ) %>%
+  select(Vertical, `Total "At-Risk" Articles (Naive)`, `Detected Onsets (Staggered)`, `Detection Rate (%)`)
+
+# Calculate Totals
+totals <- descriptives_tbl %>%
+  summarise(
+    Vertical = "Total",
+    `Total "At-Risk" Articles (Naive)` = sum(`Total "At-Risk" Articles (Naive)`, na.rm = TRUE),
+    `Detected Onsets (Staggered)` = sum(`Detected Onsets (Staggered)`, na.rm = TRUE)
+  ) %>%
+  mutate(
+    `Detection Rate (%)` = (`Detected Onsets (Staggered)` / `Total "At-Risk" Articles (Naive)`) * 100
+  )
+
+# 1. Create the final data frame and save it to a variable
+final_table_data <- bind_rows(descriptives_tbl, totals) %>%
+  mutate(
+    `Detection Rate (%)` = sprintf("%.1f%%", `Detection Rate (%)`)
+  )
+
+# 2. Pipe the new variable to kable() and use it in row_spec()
+final_table_data %>%
+  kable(
+    caption = "Summary of Treatment Assignment: Naive vs. Staggered Onset Detection",
+    booktabs = TRUE,
+    align = "lrrr"
+  ) %>%
+  kable_styling(latex_options = "striped", full_width = FALSE) %>%
+  row_spec(nrow(final_table_data), bold = TRUE)
+```
+
+### 3. Mechanism Analysis Plots
+This plot visually inspects the relationship between the effect size (LATE) on each vertical and your two proposed mechanisms.
+
+```{r}
+#| label: create-meta-plots
+#| echo: false
+#| fig-cap: "Relationship between cannibalization effect (LATE) and vertical-level characteristics."
+
+# --- A. Manually define spatial scores ---
+spatial_scores <- tibble::tribble(
+  ~Vertical, ~spatial_score,
+  "tech", 1,
+  "goed_nieuws", 1,
+  "achterklap", 3,
+  "Media_en_Cultuur", 4,
+  "economie", 6
+)
+
+# --- B. Join all data ---
+meta_plot_data <- vertical_atts %>%
+  left_join(thematic_scores, by = "Vertical") %>%
+  left_join(spatial_scores, by = "Vertical") %>%
+  filter(!is.na(ATT)) # Ensure we only plot verticals with results
+
+print("--- Full Meta-Plot Data ---")
+print(meta_plot_data)
+
+# --- C. Plot 1: Format Proximity ---
+if (nrow(meta_plot_data) > 0) {
+  plot_spatial <- ggplot(meta_plot_data, aes(x = spatial_score, y = ATT)) +
+    geom_point(size = 3, color = "#0072B2") +
+    geom_errorbar(aes(ymin = Conf.Low, ymax = Conf.High), width = 0.1, color = "#0072B2") +
+    geom_text_repel(aes(label = Vertical), nudge_x = 0.3) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    labs(title = "Mechanism 1: Cannibalization by Format Proximity",
+         subtitle = paste("Onset Threshold:", PERCENT),
+         x = "Spatial/Layout Proximity Score (1 = Closest, 6 = Farthest)",
+         y = "Estimated LATE (Cannibalization Effect)") +
+    theme_minimal(base_size = 14)
+
+  ggsave(file.path(FIGURES_DIR, "meta_plot_format_proximity.png"), plot = plot_spatial, width = 8, height = 6)
+  print(plot_spatial)
+} else {
+  message("No data for spatial/format proximity plot.")
+}
+
+# --- D. Plot 2: Topical Proximity ---
+if (nrow(meta_plot_data) > 0) {
+  plot_thematic <- ggplot(meta_plot_data, aes(x = avg_thematic_similarity, y = ATT)) +
+    geom_point(size = 3, color = "#D55E00") +
+    geom_errorbar(aes(ymin = Conf.Low, ymax = Conf.High), width = 0.01, color = "#D55E00") +
+    geom_text_repel(aes(label = Vertical)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    labs(title = "Mechanism 2: Cannibalization by Topical Proximity",
+         subtitle = paste("Onset Threshold:", PERCENT),
+         x = "Average Thematic Similarity to 'Tweakers'",
+         y = "Estimated LATE (Cannibalization Effect)") +
+    theme_minimal(base_size = 14)
+
+  ggsave(file.path(FIGURES_DIR, "meta_plot_topical_proximity.png"), plot = plot_thematic, width = 8, height = 6)
+  print(plot_thematic)
+} else {
+  message("No data for topical proximity plot.")
+}
+```
+
+### 4. HTE by Thematic Tier (Within 'Tech')
+This plot visualizes the (cannibalization) LATE on 'tech' articles, broken down by how similar they are to the 'tweakers' prototype.
+
+```{r}
+#| label: create-hte-tier-plot
+#| echo: false
+#| fig-cap: "Heterogeneous effect within 'tech' vertical based on thematic similarity."
+
+if (nrow(thematic_tier_atts) > 0) {
+  plot_thematic_hte <- ggplot(thematic_tier_atts, aes(x = Tier, y = ATT)) +
+    geom_point(size = 3, color = "#009E73") +
+    geom_errorbar(aes(ymin = Conf.Low, ymax = Conf.High), width = 0.1, color = "#009E73") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(title = "HTE: LATE on 'Tech' by Thematic Tier",
+         subtitle = paste("Onset Threshold:", PERCENT),
+         x = "Thematic Tier (Tier 0 = Most Similar to 'Tweakers')",
+         y = "Estimated LATE (Cannibalization Effect)") +
+    theme_minimal(base_size = 14)
+
+  ggsave(file.path(FIGURES_DIR, "hte_plot_thematic_tiers.png"), plot = plot_thematic_hte, width = 8, height = 6)
+  print(plot_thematic_hte)
+} else {
+  message("No thematic tier data found, skipping HTE plot.")
+}
+```

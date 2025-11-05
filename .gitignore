@@ -1,0 +1,11 @@
+# Ignore all data
+/data/
+
+# R/Python/OS files
+/renv/
+.Rproj.user/
+.Rhistory
+.RData
+__pycache__/
+*.pyc
+.DS_Store

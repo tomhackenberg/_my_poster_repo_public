@@ -1,0 +1,522 @@
+---
+title: "Final Analysis: Cannibalization Effects and Causal Mechanisms"
+author: "Analysis Report"
+date: "today"
+format:
+  html:
+    toc: true
+    toc-float: true
+    code-fold: true
+    theme: flatly
+params:
+  onset_pct: "80pct"
+---
+
+### 1. Setup & Model Definitions
+
+```{r}
+#| label: setup
+#| include: true
+
+# Core libraries
+library(tidyverse)
+library(arrow)
+library(here)
+library(scales)
+
+# Causal inference libraries
+library(did)
+library(HonestDiD)
+
+# Reporting libraries
+library(knitr)
+library(kableExtra)
+library(params)
+
+
+# --- Parameterized Variables ---
+PERCENT <- params$onset_pct
+message(paste("--- Running analysis for threshold:", PERCENT, "---"))
+
+# --- Dynamic Paths based on Parameter ---
+PROCESSED_DATA_DIR <- here("data", "processed")
+FIGURES_DIR <- here("figures", PERCENT)
+RESULTS_DIR <- here("results", PERCENT)
+dir.create(FIGURES_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(RESULTS_DIR, showWarnings = FALSE, recursive = TRUE)
+
+# Global analysis parameters
+ANALYSIS_WINDOW <- 28
+MAIN_DATA_PREFIX <- paste0("cs_data_effect_onset_", PERCENT)
+
+# --- Define the .RData file path for saving/loading ---
+MODEL_OUTPUT_FILE <- file.path(RESULTS_DIR, "model_outputs.RData")
+```
+
+```{r knitr-setup}
+#| include: false
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+### 1. Analysis function
+
+```{r}
+#| label: analysis-function
+#| include: true
+#| echo: true
+
+# (run_cs_analysis function is unchanged, except for the plot)
+run_cs_analysis <- function(data, 
+                            y_variable_name = "DAILY_PAGEVIEWS", 
+                            x_formula = ~1,
+                            plot_title = NULL,
+                            est_method = "dr",
+                            control_group = "notyettreated") {
+  
+  if (is.null(plot_title)) plot_title <- paste("Event Study:", y_variable_name)
+  
+  if (sum(data$gname > 0) == 0) {
+    message("No treated units found for '", y_variable_name, "'. Skipping analysis.")
+    return(NULL)
+  }
+  
+  results <- tryCatch({
+    att_gt(yname = y_variable_name,
+           tname = "time_period",
+           idname = "ARTICLE_SHORT_ID",
+           gname = "gname",
+           data = data,
+           control_group = control_group,
+           xformla = x_formula,
+           est_method = est_method,
+           panel = TRUE,
+           allow_unbalanced_panel = TRUE,
+           bstrap = TRUE,
+           cband = TRUE)
+  }, error = function(e) {
+    message("Could not run att_gt for: ", y_variable_name, ". Error: ", e$message)
+    return(NULL)
+  })
+  
+  if (is.null(results)) return(NULL)
+  
+  agg_dynamic <- aggte(results, type = "dynamic", na.rm = TRUE, max_e = ANALYSIS_WINDOW)
+  agg_simple <- aggte(results, type = "simple", na.rm = TRUE)
+  
+  # --- THIS IS THE CORRECT FIX ---
+  # Use the 'xgap' argument native to ggdid()
+  plot <- ggdid(agg_dynamic, xgap = 7) +
+    theme_minimal(base_size = 14) +
+    labs(title = plot_title, 
+         x = "Event Time (Days, relative to cohort assignment Monday)", 
+         y = "ATT") +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50")
+  # --- END FIX ---
+    
+  return(list(results = results, plot = plot, agg_simple = agg_simple, agg_dynamic = agg_dynamic))
+}
+
+# --- This is the correct, multi-argument extract_results function ---
+extract_results <- function(analysis_obj, 
+                            group_name, 
+                            outcome_name = "Daily Pageviews",  # Default outcome
+                            analysis_type = "Cannibalization") { # Default type
+  
+  if (is.null(analysis_obj) || is.null(analysis_obj$agg_simple)) {
+    return(tibble(
+      Group = group_name, 
+      Outcome = outcome_name, 
+      Analysis_Type = analysis_type,
+      Analysis_Label = paste0(group_name, " (", outcome_name, ")"),
+      ATT = NA, Std.Error = NA, Conf.Low = NA, Conf.High = NA, N_Treated = 0
+    ))
+  }
+  
+  res <- analysis_obj$agg_simple 
+  dta <- analysis_obj$results$DIDparams$data
+  n_treated <- length(unique(dta$ARTICLE_SHORT_ID[dta$gname != 0]))
+  
+  tibble(
+    Group = group_name,
+    Outcome = outcome_name,
+    Analysis_Type = analysis_type,
+    Analysis_Label = paste0(group_name, " (", outcome_name, ")"),
+    ATT = res$overall.att, 
+    Std.Error = res$overall.se, 
+    Conf.Low = res$overall.att - 1.96 * res$overall.se, 
+    Conf.High = res$overall.att + 1.96 * res$overall.se, 
+    N_Treated = n_treated
+  )
+}
+```
+
+### 2. Run All Analyses
+
+```{r}
+#| label: run-all-analyses
+#| cache: true
+#| include: false
+
+# --- 1. Load the ONE clean "master" dataset ---
+master_data <- read_parquet(file.path(PROCESSED_DATA_DIR, paste0(MAIN_DATA_PREFIX, "_MASTER.parquet")))
+
+# --- 2. Run analysis for 'tech' ---
+# We create a temporary, clean DF for this analysis:
+# It includes ALL 'tech' articles + ALL "asymptomatic" articles (gname == 0).
+# "Symptomatic" articles from other verticals (gname > 0) are correctly EXCLUDED 
+# from the control group by this filter.
+df_tech <- filter(master_data, TAG == 'tech' | gname == 0)
+outcomes_to_test <- c("DAILY_PAGEVIEWS", "traffic_loyal_audience", "traffic_external_discovery")
+tech_vertical_analyses <- purrr::map(outcomes_to_test, ~run_cs_analysis(df_tech, y_variable_name = .x, plot_title = paste("LATE on 'tech' (Symptomatic Articles):", .x))) %>% set_names(outcomes_to_test)
+
+# We will need df_main for the robustness checks later
+df_main <- df_tech
+
+# --- 3. Run analysis for other verticals ---
+verticals_to_test <- c("achterklap", "economie", "Media_en_Cultuur", "goed_nieuws")
+other_vertical_analyses <- list()
+
+# Run for 'achterklap'
+df_achterklap <- filter(master_data, TAG == 'achterklap' | gname == 0)
+other_vertical_analyses$achterklap <- run_cs_analysis(df_achterklap, plot_title = "LATE on achterklap (Symptomatic Articles)")
+
+# Run for 'economie'
+df_economie <- filter(master_data, TAG == 'economie' | gname == 0)
+other_vertical_analyses$economie <- run_cs_analysis(df_economie, plot_title = "LATE on economie (Symptomatic Articles)")
+
+# Run for 'Media_en_Cultuur'
+df_media <- filter(master_data, TAG == 'Media_en_Cultuur' | gname == 0)
+other_vertical_analyses$Media_en_Cultuur <- run_cs_analysis(df_media, plot_title = "LATE on Media_en_Cultuur (Symptomatic Articles)")
+
+# Run for 'goed_nieuws'
+df_goed <- filter(master_data, TAG == 'goed_nieuws' | gname == 0)
+other_vertical_analyses$goed_nieuws <- run_cs_analysis(df_goed, plot_title = "LATE on goed_nieuws (Symptomatic Articles)")
+
+
+# --- 4. Mechanism Analysis (HTE within 'tech') ---
+# (This is unchanged, it's a separate analysis)
+tier_files <- list.files(
+  path = PROCESSED_DATA_DIR, 
+  pattern = "cs_data_thematic_tiers_tier_\\d.parquet",
+  full.names = TRUE
+)
+thematic_hte_analyses <- purrr::map(tier_files, ~{
+  tier_data <- read_parquet(.x)
+  tier_name <- stringr::str_extract(.x, "tier_\\d") 
+  run_cs_analysis(tier_data, plot_title = paste("Effect for Thematic", tier_name))
+}) %>% 
+  set_names(stringr::str_extract(tier_files, "tier_\\d"))
+
+# --- 5. Placebo Tests (These file paths are now different) ---
+# (We load the placebo files, which were created correctly by the 'else' block in Python)
+df_placebo_random <- read_parquet(file.path(PROCESSED_DATA_DIR, "cs_data_artificial_stagger_tech.parquet"))
+artificial_stagger_placebo <- run_cs_analysis(df_placebo_random, plot_title = "Placebo: Artificial Stagger (tech)")
+
+pre_period_placebos <- purrr::map(c("tech", verticals_to_test), ~{
+  fpath <- file.path(PROCESSED_DATA_DIR, paste0(MAIN_DATA_PREFIX, "_", .x, "_placebo_pre_period.parquet"))
+  if (file.exists(fpath)) {
+    run_cs_analysis(read_parquet(fpath), plot_title = paste("Placebo: Pre-Period", .x))
+  } else { NULL }
+}) %>% set_names(c("tech", verticals_to_test))
+
+# --- 6. Robustness Checks (Models) ---
+# (This is unchanged)
+df_naive <- read_parquet(file.path(PROCESSED_DATA_DIR, "cs_data_naive_launch.parquet"))
+naive_launch_robustness <- run_cs_analysis(df_naive, plot_title = "Robustness: Naive Uniform Launch Date Model")
+```
+
+### 3. Robustness Checks (Estimators)
+
+```{r}
+#| label: alternative-estimators
+#| echo: true
+#| cache: true
+
+cat("\n#### Robustness to Alternative Estimators\n\n")
+estimators <- c("dr", "ipw", "reg")
+robustness_checks <- purrr::map(estimators, ~run_cs_analysis(data = df_main, y_variable_name = "DAILY_PAGEVIEWS", est_method = .x)) %>% set_names(estimators)
+
+robustness_summary <- purrr::map_dfr(robustness_checks, ~tibble(ATT = .x$agg_simple$overall.att, `Std. Error` = .x$agg_simple$overall.se), .id = "Original_Estimator_Tag") %>%
+  mutate(
+    Estimator = case_when(
+      Original_Estimator_Tag == "dr" ~ "Doubly Robust (Primary)", 
+      Original_Estimator_Tag == "ipw" ~ "Inverse Probability Weighting", 
+      Original_Estimator_Tag == "reg" ~ "Outcome Regression"
+    )
+  ) %>%
+  select(Estimator, ATT, `Std. Error`)
+
+knitr::kable(robustness_summary, caption = "Comparison of ATT estimates for Total Pageviews using different estimators.", digits = 3)
+
+write.csv(robustness_summary, file.path(RESULTS_DIR, "robustness_summary_estimators.csv"), row.names = FALSE)
+
+
+purrr::iwalk(robustness_checks, ~{
+  # .x is the analysis object, .y is the estimator tag (dr, ipw, reg)
+  if (!is.null(.x) && !is.null(.x$plot)) {
+    # Determine the plot title based on the estimator
+    plot_title <- switch(.y,
+      "dr" = "Robustness: Event Study (Doubly Robust Estimator)",
+      "ipw" = "Robustness: Event Study (IPW Estimator)",
+      "reg" = "Robustness: Event Study (Regression Estimator)",
+      paste("Robustness: Event Study (", toupper(.y), "Estimator)")
+    )
+    
+    # 1. Add specific title to the plot
+    plot_robustness <- .x$plot + 
+      labs(title = plot_title) +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+    
+    # 2. Save the plot using a descriptive file name
+    ggsave(
+      file.path(FIGURES_DIR, paste0("event_study_robustness_estimator_", .y, ".png")), 
+      plot = plot_robustness, 
+      width = 10, 
+      height = 6
+    )
+    
+    # 3. Print the plot to the report
+    print(plot_robustness)
+  }
+})
+
+```
+
+```{r}
+#| label: control-group-comparison
+#| echo: true
+#| cache: true
+
+cat("\n#### Robustness to Alternative Control Groups\n\n")
+control_groups <- c("notyettreated", "nevertreated")
+control_group_checks <- purrr::map(control_groups, ~run_cs_analysis(data = df_main, y_variable_name = "DAILY_PAGEVIEWS", control_group = .x)) %>% set_names(control_groups)
+
+control_group_summary <- purrr::map_dfr(control_group_checks, ~tibble(ATT = .x$agg_simple$overall.att, `Std. Error` = .x$agg_simple$overall.se), .id = "Control Group") %>%
+  mutate(`Control Group` = case_when(`Control Group` == "notyettreated" ~ "Not-Yet-Treated (Primary)", `Control Group` == "nevertreated" ~ "Never-Treated (Robustness)"))
+
+knitr::kable(control_group_summary, caption = "Comparison of ATT estimates for Total Pageviews using different control groups.", digits = 3)
+
+write.csv(control_group_summary, file.path(RESULTS_DIR, "robustness_summary_controls.csv"), row.names = FALSE)
+
+# 1. Add clear titles to the individual plots
+plot_notyettreated <- control_group_checks$notyettreated$plot + 
+    labs(title = "Control Group: Not-Yet-Treated (Primary)")
+    
+plot_nevertreated <- control_group_checks$nevertreated$plot + 
+    labs(title = "Control Group: Never-Treated (Robustness)")
+
+# 2. Save them as two separate plot files
+ggsave(
+  file.path(FIGURES_DIR, "event_study_robustness_control_notyettreated.png"), 
+  plot = plot_notyettreated, 
+  width = 10, 
+  height = 6
+)
+
+ggsave(
+  file.path(FIGURES_DIR, "event_study_robustness_control_nevertreated.png"), 
+  plot = plot_nevertreated, 
+  width = 10, 
+  height = 6
+)
+
+# 3. Print both plots to the report
+print(plot_notyettreated)
+print(plot_nevertreated)
+```
+
+### 4. Summary Plot & Table
+
+#### 4.1 Load Objects & Create Report
+
+```{r}
+#| label: create-summary-results
+#| echo: false
+
+
+# --- 1. Robustness Tibbles (from loaded objects) ---
+robustness_checks_tbl <- robustness_summary %>%
+  mutate(
+    Group = Estimator,
+    Outcome = "Daily Pageviews",
+    Analysis_Type = "Robustness Check",
+    Analysis_Label = paste("Robustness:", Estimator)
+  ) %>%
+  select(Group, Outcome, Analysis_Type, Analysis_Label, ATT, Std.Error = `Std. Error`)
+
+control_group_tbl <- control_group_summary %>%
+  mutate(
+    Group = `Control Group`,
+    Outcome = "Daily Pageviews",
+    Analysis_Type = "Robustness Check",
+    Analysis_Label = paste("Robustness:", `Control Group`)
+  ) %>%
+  select(Group, Outcome, Analysis_Type, Analysis_Label, ATT, Std.Error = `Std. Error`)
+
+# --- 2. Consolidate all results ---
+all_results <- bind_rows(
+  # Cannibalization Effects
+  extract_results(tech_vertical_analyses$DAILY_PAGEVIEWS, "tech", "Daily Pageviews"),
+  extract_results(tech_vertical_analyses$traffic_loyal_audience, "tech", "Loyal Audience"),
+  extract_results(tech_vertical_analyses$traffic_external_discovery, "tech", "External Discovery"),
+  extract_results(other_vertical_analyses$achterklap, "achterklap"),
+  extract_results(other_vertical_analyses$economie, "economie"),
+  extract_results(other_vertical_analyses$Media_en_Cultuur, "Media_en_Cultuur"),
+  extract_results(other_vertical_analyses$goed_nieuws, "goed_nieuws"),
+
+  # Mechanism Analysis (HTE)
+  purrr::imap_dfr(thematic_hte_analyses, ~extract_results(.x, .y, analysis_type = "Mechanism (HTE)")),
+
+  # Robustness Checks
+  extract_results(naive_launch_robustness, "Naive Launch Model", analysis_type = "Robustness Check"),
+  robustness_checks_tbl,
+  control_group_tbl,
+    
+  # Placebo Tests
+  extract_results(artificial_stagger_placebo, "Artificial Stagger (tech)", analysis_type = "Placebo Test"),
+  purrr::imap_dfr(pre_period_placebos, ~extract_results(.x, .y, analysis_type = "Placebo Test"))
+  
+) %>%
+  mutate(
+    # Fix labels for placebos
+    Analysis_Label = if_else(
+      Analysis_Type == "Placebo Test" & Group != "Artificial Stagger (tech)",
+      paste0("Placebo: Pre-Period (", Group, ")"),
+      Analysis_Label
+    )
+  ) %>%
+  mutate(
+    # Generate CIs for robustness checks that didn't have them
+    Conf.Low = if_else(is.na(Conf.Low), ATT - 1.96 * Std.Error, Conf.Low),
+    Conf.High = if_else(is.na(Conf.High), ATT + 1.96 * Std.Error, Conf.High)
+  )
+
+# Save main summary
+write.csv(all_results, file.path(RESULTS_DIR, "all_results_summary.csv"), row.names = FALSE)
+
+# --- Coefficient Plot ---
+coefficient_plot_data <- all_results %>% filter(!is.na(ATT))
+
+# Use the new, clean 'Analysis_Type' for faceting
+coefficient_plot <- ggplot(coefficient_plot_data, aes(x = ATT, y = fct_reorder(Analysis_Label, ATT))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_point(color = "#0072B2", size = 3) +
+  geom_errorbarh(aes(xmin = Conf.Low, xmax = Conf.High), color = "#0072B2", height = 0.2) +
+  facet_grid(Analysis_Type ~ ., scales = "free_y", space = "free_y") +
+  labs(title = "Summary of Local Average Treatment Effects (LATE)", 
+       subtitle = paste("Onset Threshold:", PERCENT), 
+       x = "Estimated LATE (Local Average Treatment Effect on the Treated)", y = "") +
+  theme_minimal(base_size = 14) +
+  theme(strip.text.y = element_text(angle = 0, face = "bold"), 
+        panel.grid.major.y = element_blank())
+
+ggsave(file.path(FIGURES_DIR, "coefficient_summary_plot.png"), plot = coefficient_plot, width = 10, height = 10)
+
+# --- Summary Table (for HTML output) ---
+group_order <- c("Cannibalization Effects", "Mechanism (HTE)", "Robustness Checks", "Placebo Tests")
+
+table_data <- all_results %>%
+  mutate(
+    p.value = 2 * pnorm(-abs(ATT / Std.Error)),
+    Significance = case_when(p.value < 0.01 ~ "***", p.value < 0.05 ~ "**", p.value < 0.10 ~ "*", TRUE ~ ""),
+    ATT_formatted = if_else(is.na(ATT), "NA (No onsets)", paste0(sprintf("%.3f", ATT), Significance))
+  ) %>%
+  select(Group = Analysis_Type, Analysis = Analysis_Label, `N Treated` = N_Treated, ATT = ATT_formatted, `Std. Error` = Std.Error) %>%
+  arrange(factor(Group, levels = group_order, ordered = TRUE))
+
+group_counts <- table(factor(table_data$Group, levels = group_order, ordered = TRUE))
+group_counts <- group_counts[group_counts > 0] 
+
+summary_table <- table_data %>%
+  select(-Group) %>%
+  kable(caption = "Summary of LATE and Placebo DiD Results", booktabs = TRUE) %>%
+  kable_styling(latex_options = "striped", full_width = FALSE) %>%
+  pack_rows(index = group_counts)
+```
+
+```{r}
+#| label: display-summary-plot
+#| echo: false
+print(coefficient_plot)
+```
+
+```{r}
+#| label: display-summary-table
+#| echo: false
+summary_table
+```
+
+### 5. Save Plots & Data for Meta-Analysis
+
+```{r}
+#| label: save-plots-and-meta-data
+#| chache: true
+#| include: false
+
+# --- A. Save Event Study Plots ---
+save_plot <- function(analysis_obj, file_name) {
+  if (!is.null(analysis_obj) && !is.null(analysis_obj$plot)) {
+    ggsave(file.path(FIGURES_DIR, file_name), plot = analysis_obj$plot, width = 10, height = 6)
+  }
+}
+purrr::iwalk(tech_vertical_analyses, ~save_plot(.x, paste0("event_study_tech_", .y, ".png")))
+purrr::iwalk(other_vertical_analyses, ~save_plot(.x, paste0("event_study_vertical_", .y, ".png")))
+purrr::iwalk(thematic_hte_analyses, ~save_plot(.x, paste0("event_study_thematic_", .y, ".png")))
+save_plot(naive_launch_robustness, "event_study_robustness_naive.png")
+save_plot(artificial_stagger_placebo, "event_study_placebo_artificial.png")
+purrr::iwalk(pre_period_placebos, ~save_plot(.x, paste0("event_study_placebo_pre_period_", .y, ".png")))
+cat(paste("All event study plots have been saved to:", FIGURES_DIR, "\n"))
+
+
+# --- B. Save Cannibalization (Vertical) ATTs ---
+att_tech <- extract_results(tech_vertical_analyses$DAILY_PAGEVIEWS, "tech")
+atts_other_verticals <- bind_rows(
+  extract_results(other_vertical_analyses$achterklap, "achterklap"),
+  extract_results(other_vertical_analyses$economie, "economie"),
+  extract_results(other_vertical_analyses$Media_en_Cultuur, "Media_en_Cultuur"),
+  extract_results(other_vertical_analyses$goed_nieuws, "goed_nieuws")
+)
+vertical_att_results <- bind_rows(att_tech, atts_other_verticals) %>%
+  select(Vertical = Group, ATT, Std.Error, Conf.Low, Conf.High, N_Treated) # <-- N_Treated ADDED
+write.csv(vertical_att_results, file.path(RESULTS_DIR, "vertical_att_results.csv"), row.names = FALSE)
+
+
+# --- C. Save Thematic HTE (Tier) ATTs ---
+thematic_tier_results <- purrr::imap_dfr(thematic_hte_analyses, ~extract_results(.x, .y, analysis_type = "Mechanism (HTE)")) %>%
+  select(Tier = Group, ATT, Std.Error, Conf.Low, Conf.High, N_Treated) # <-- N_Treated ADDED
+write.csv(thematic_tier_results, file.path(RESULTS_DIR, "thematic_tier_results.csv"), row.names = FALSE)
+
+cat(paste("All meta-analysis data saved to:", RESULTS_DIR, "\n"))
+```
+
+### 6. Sensitivity (HonestDiD)
+
+```{r}
+#| label: honest-did-sensitivity
+#| cache: true
+#| echo: false
+#| fig-cap: "HonestDiD sensitivity plot, assessing the robustness of the main finding to violations of the parallel trends assumption."
+
+cat("#### HonestDiD Sensitivity Analysis\n\n")
+if (!is.null(tech_vertical_analyses$DAILY_PAGEVIEWS)) {
+  agg_dynamic_pv <- tech_vertical_analyses$DAILY_PAGEVIEWS$agg_dynamic
+  inf_func_matrix <- do.call(cbind, agg_dynamic_pv$inf.function)
+  mboot_results <- did::mboot(inf_func_matrix, agg_dynamic_pv$DIDparams)
+  
+  betahat <- agg_dynamic_pv$att.egt
+  pre_indices <- which(agg_dynamic_pv$egt < 0)
+  post_indices <- which(agg_dynamic_pv$egt >= 0)
+  ordered_indices <- c(pre_indices, post_indices)
+  
+  robust_results <- HonestDiD::createSensitivityResults_relativeMagnitudes(betahat = betahat[ordered_indices], sigma = mboot_results$V[ordered_indices, ordered_indices], numPrePeriods = length(pre_indices), numPostPeriods = length(post_indices))
+  original_results <- HonestDiD::constructOriginalCS(betahat = betahat[ordered_indices], sigma = mboot_results$V[ordered_indices, ordered_indices], numPrePeriods = length(pre_indices), numPostPeriods = length(post_indices))
+  
+  p_honest <- HonestDiD::createSensitivityPlot_relativeMagnitudes(robustResults = robust_results, originalResults = original_results) + labs(title = "HonestDiD Sensitivity for 'tech' Pageviews")
+  
+  ggsave(file.path(FIGURES_DIR, "sensitivity_honestdid.png"), plot = p_honest, width = 8, height = 6)
+  print(p_honest)
+}
+```
