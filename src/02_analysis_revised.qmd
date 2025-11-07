@@ -9,7 +9,7 @@ format:
     code-fold: true
     theme: flatly
 params:
-  onset_pct: "80pct"
+  onset_pct: "70pct"
 ---
 
 ### 1. Setup & Model Definitions

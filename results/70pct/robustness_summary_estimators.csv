@@ -1,0 +1,4 @@
+"Estimator","ATT","Std. Error"
+"Doubly Robust (Primary)",-9.51300291870375,2.49522702488479
+"Inverse Probability Weighting",-9.5130029187036,2.505320669863
+"Outcome Regression",-9.51300291870371,2.56569804025651

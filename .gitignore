@@ -9,3 +9,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Cache & Outputs
+*_cache/
+/outputs/

@@ -1,0 +1,24 @@
+"Group","Outcome","Analysis_Type","Analysis_Label","ATT","Std.Error","Conf.Low","Conf.High","N_Treated"
+"tech","Daily Pageviews","Cannibalization","tech (Daily Pageviews)",-9.51300291870375,2.54389803527839,-14.4990430678494,-4.5269627695581,288
+"tech","Loyal Audience","Cannibalization","tech (Loyal Audience)",-0.530849042159198,0.155435710490104,-0.835503034719801,-0.226195049598595,288
+"tech","External Discovery","Cannibalization","tech (External Discovery)",-0.199386694110524,0.17273299445958,-0.537943363251302,0.139169975030253,288
+"achterklap","Daily Pageviews","Cannibalization","achterklap (Daily Pageviews)",-10.4332261961841,1.91946477372579,-14.1953771526867,-6.67107523968159,731
+"economie","Daily Pageviews","Cannibalization","economie (Daily Pageviews)",-8.68285465092248,1.38317019891333,-11.3938682407926,-5.97184106105236,1400
+"Media_en_Cultuur","Daily Pageviews","Cannibalization","Media_en_Cultuur (Daily Pageviews)",-12.0914574249476,1.57175405436739,-15.1720953715077,-9.01081947838752,1148
+"goed_nieuws","Daily Pageviews","Cannibalization","goed_nieuws (Daily Pageviews)",NA,NA,NA,NA,0
+"tier_0","Daily Pageviews","Mechanism (HTE)","tier_0 (Daily Pageviews)",1.4245781461233,3.66453646288031,-5.75791332112211,8.60706961336871,192
+"tier_1","Daily Pageviews","Mechanism (HTE)","tier_1 (Daily Pageviews)",-7.98007385227231,5.21286020207945,-18.197279848348,2.2371321438034,177
+"tier_2","Daily Pageviews","Mechanism (HTE)","tier_2 (Daily Pageviews)",-5.15016740110605,5.48551000605757,-15.9017670129789,5.60143221076679,162
+"tier_3","Daily Pageviews","Mechanism (HTE)","tier_3 (Daily Pageviews)",-7.12524234631821,4.73645935575671,-16.4087026836014,2.15821799096493,200
+"Naive Launch Model","Daily Pageviews","Robustness Check","Naive Launch Model (Daily Pageviews)",-1.24214866288924,2.05384025699603,-5.26767556660146,2.78337824082298,731
+"Doubly Robust (Primary)","Daily Pageviews","Robustness Check","Robustness: Doubly Robust (Primary)",-9.51300291870375,2.49522702488479,-14.4036478874779,-4.62235794992955,NA
+"Inverse Probability Weighting","Daily Pageviews","Robustness Check","Robustness: Inverse Probability Weighting",-9.5130029187036,2.505320669863,-14.4234314316351,-4.60257440577212,NA
+"Outcome Regression","Daily Pageviews","Robustness Check","Robustness: Outcome Regression",-9.51300291870371,2.56569804025651,-14.5417710776065,-4.48423475980094,NA
+"Not-Yet-Treated (Primary)","Daily Pageviews","Robustness Check","Robustness: Not-Yet-Treated (Primary)",-9.51300291870375,2.37735362370227,-14.1726160211602,-4.8533898162473,NA
+"Never-Treated (Robustness)","Daily Pageviews","Robustness Check","Robustness: Never-Treated (Robustness)",-9.51347638044822,2.55742979215747,-14.5260387730769,-4.50091398781958,NA
+"Artificial Stagger (tech)","Daily Pageviews","Placebo Test","Artificial Stagger (tech) (Daily Pageviews)",0.959325260408231,1.31451431857127,-1.61712280399146,3.53577332480793,731
+"tech","Daily Pageviews","Placebo Test","Placebo: Pre-Period (tech)",NA,NA,NA,NA,0
+"achterklap","Daily Pageviews","Placebo Test","Placebo: Pre-Period (achterklap)",NA,NA,NA,NA,0
+"economie","Daily Pageviews","Placebo Test","Placebo: Pre-Period (economie)",NA,NA,NA,NA,0
+"Media_en_Cultuur","Daily Pageviews","Placebo Test","Placebo: Pre-Period (Media_en_Cultuur)",NA,NA,NA,NA,0
+"goed_nieuws","Daily Pageviews","Placebo Test","Placebo: Pre-Period (goed_nieuws)",NA,NA,NA,NA,0

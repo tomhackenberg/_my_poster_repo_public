@@ -4,7 +4,7 @@ author: "Analysis Report"
 date: "today"
 format: html
 params:
-  onset_pct: "80pct"
+  onset_pct: "70pct"
 ---
 
 ### 0. Setup
