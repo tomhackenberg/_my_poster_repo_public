@@ -8,17 +8,17 @@ The **live, interactive HTML reports** (which show all code and outputs) are the
 
 ---
 
-## 🚀 View the Live Analysis Reports
+## View the Live Analysis Reports
 
 This repository is hosted on GitHub Pages. You can view the final, rendered HTML reports directly in your browser.
 
 * **[View 80% Threshold Analysis (Primary)](https://github.com/tomhackenberg/_my_poster_repo_public/tree/main/src/results/80pct)**
-* **[View 70% Threshold Analysis (Sensitivity)](https://tomhackenberg.github.io/_my_poster_repo_public/src/results/70pct/02_analysis_revised.html)**
-* **[View 90% Threshold Analysis (Sensitivity)](https://tomhackenberg.github.io/_my_poster_repo_public/src/results/90pct/02_analysis_revised.html)**
+* **[View 70% Threshold Analysis (Sensitivity)](https://tomhackenberg.github.io/_my_poster_repo_public/src/results/70pct)**
+* **[View 90% Threshold Analysis (Sensitivity)](https://tomhackenberg.github.io/_my_poster_repo_public/src/results/90pct)**
 
 ---
 
-## 🔬 The 3-Step Analysis Pipeline
+## The 3-Step Analysis Pipeline
 
 The full workflow is contained in the `/src/` folder:
 
@@ -36,7 +36,7 @@ The full workflow is contained in the `/src/` folder:
 <details>
 <summary><b>Click here for Full Replication Instructions & Repository Contents</b></summary>
 
-### 🔄 Replication Instructions
+### Replication Instructions
 
 While you cannot re-run the pipeline without the private data, here is the full set of commands used to generate all outputs for a single run (e.g., 80% threshold).
 
@@ -79,7 +79,7 @@ quarto render src/03_analysis_revised.qmd --execute-param onset_pct:80pct
 ```
 
 
-## 📁 Repository Structure
+## Repository Structure
 
 ├── src/                    # Source code (Python .py and Quarto .qmd files)
 ├── results/                # Pre-computed tables (.csv) and HTML reports
