@@ -12,7 +12,7 @@ The **live, interactive HTML reports** (which show all code and outputs) are the
 
 This repository is hosted on GitHub Pages. You can view the final, rendered HTML reports directly in your browser.
 
-* **[View 80% Threshold Analysis (Primary)](https://github.com/tomhackenberg/_my_poster_repo_public/blob/main/src/results/80pct/02_analysis_revised.html)**
+* **[View 80% Threshold Analysis (Primary)](https://tomhackenberg.github.io/_my_poster_repo_public/src/results/80pct/02_analysis_revised.html)**
 * **[View 70% Threshold Analysis (Sensitivity)](https://tomhackenberg.github.io/_my_poster_repo_public/src/results/70pct/02_analysis_revised.html)**
 * **[View 90% Threshold Analysis (Sensitivity)](https://tomhackenberg.github.io/_my_poster_repo_public/src/results/90pct/02_analysis_revised.html)**
 
