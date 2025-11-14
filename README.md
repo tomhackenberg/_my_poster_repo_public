@@ -80,7 +80,7 @@ quarto render src/03_analysis_revised.qmd --execute-param onset_pct:80pct
 
 
 ## Repository Structure
-
+```
 ├── src/                    # Source code (Python .py and Quarto .qmd files)
 ├── results/                # Pre-computed tables (.csv) and HTML reports
 │   ├── 70pct/
@@ -94,3 +94,4 @@ quarto render src/03_analysis_revised.qmd --execute-param onset_pct:80pct
 ├── data/                   # (Empty) Placeholder for private raw data
 ├── requirements.txt        # Python dependencies
 └── renv.lock              # R package dependencies
+```
