@@ -68,7 +68,6 @@ knitr::opts_chunk$set(
 #| include: true
 #| echo: true
 
-# (run_cs_analysis function is unchanged, except for the plot)
 run_cs_analysis <- function(data, 
                             y_variable_name = "DAILY_PAGEVIEWS", 
                             x_formula = ~1,
@@ -106,24 +105,20 @@ run_cs_analysis <- function(data,
   agg_dynamic <- aggte(results, type = "dynamic", na.rm = TRUE, max_e = ANALYSIS_WINDOW)
   agg_simple <- aggte(results, type = "simple", na.rm = TRUE)
   
-  # --- THIS IS THE CORRECT FIX ---
-  # Use the 'xgap' argument native to ggdid()
   plot <- ggdid(agg_dynamic, xgap = 7) +
     theme_minimal(base_size = 14) +
     labs(title = plot_title, 
          x = "Event Time (Days, relative to cohort assignment Monday)", 
          y = "ATT") +
     geom_hline(yintercept = 0, linetype = "dashed", color = "gray50")
-  # --- END FIX ---
     
   return(list(results = results, plot = plot, agg_simple = agg_simple, agg_dynamic = agg_dynamic))
 }
 
-# --- This is the correct, multi-argument extract_results function ---
 extract_results <- function(analysis_obj, 
                             group_name, 
-                            outcome_name = "Daily Pageviews",  # Default outcome
-                            analysis_type = "Cannibalization") { # Default type
+                            outcome_name = "Daily Pageviews",
+                            analysis_type = "Cannibalization") {
   
   if (is.null(analysis_obj) || is.null(analysis_obj$agg_simple)) {
     return(tibble(
@@ -197,7 +192,7 @@ other_vertical_analyses$goed_nieuws <- run_cs_analysis(df_goed, plot_title = "LA
 
 
 # --- 4. Mechanism Analysis (HTE within 'tech') ---
-# (This is unchanged, it's a separate analysis)
+# (This is for 03_analysis_revised)
 tier_files <- list.files(
   path = PROCESSED_DATA_DIR, 
   pattern = "cs_data_thematic_tiers_tier_\\d.parquet",
@@ -211,7 +206,7 @@ thematic_hte_analyses <- purrr::map(tier_files, ~{
   set_names(stringr::str_extract(tier_files, "tier_\\d"))
 
 # --- 5. Placebo Tests (These file paths are now different) ---
-# (We load the placebo files, which were created correctly by the 'else' block in Python)
+# (We load the placebo files, which were created by the 'else' block in Python)
 df_placebo_random <- read_parquet(file.path(PROCESSED_DATA_DIR, "cs_data_artificial_stagger_tech.parquet"))
 artificial_stagger_placebo <- run_cs_analysis(df_placebo_random, plot_title = "Placebo: Artificial Stagger (tech)")
 
@@ -223,7 +218,6 @@ pre_period_placebos <- purrr::map(c("tech", verticals_to_test), ~{
 }) %>% set_names(c("tech", verticals_to_test))
 
 # --- 6. Robustness Checks (Models) ---
-# (This is unchanged)
 df_naive <- read_parquet(file.path(PROCESSED_DATA_DIR, "cs_data_naive_launch.parquet"))
 naive_launch_robustness <- run_cs_analysis(df_naive, plot_title = "Robustness: Naive Uniform Launch Date Model")
 ```
@@ -257,7 +251,6 @@ write.csv(robustness_summary, file.path(RESULTS_DIR, "robustness_summary_estimat
 purrr::iwalk(robustness_checks, ~{
   # .x is the analysis object, .y is the estimator tag (dr, ipw, reg)
   if (!is.null(.x) && !is.null(.x$plot)) {
-    # Determine the plot title based on the estimator
     plot_title <- switch(.y,
       "dr" = "Robustness: Event Study (Doubly Robust Estimator)",
       "ipw" = "Robustness: Event Study (IPW Estimator)",
@@ -400,7 +393,6 @@ write.csv(all_results, file.path(RESULTS_DIR, "all_results_summary.csv"), row.na
 # --- Coefficient Plot ---
 coefficient_plot_data <- all_results %>% filter(!is.na(ATT))
 
-# Use the new, clean 'Analysis_Type' for faceting
 coefficient_plot <- ggplot(coefficient_plot_data, aes(x = ATT, y = fct_reorder(Analysis_Label, ATT))) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
   geom_point(color = "#0072B2", size = 3) +

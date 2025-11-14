@@ -1,3 +1,20 @@
+"""
+   Data Preparation Pipeline for Staggered DiD Analysis
+   
+   This script implements the Stage 1 identification strategy from 
+   "Measuring What Matters: A Forward-Engineered Approach to Causal 
+   Inference with Endogenous Staggered Adoption"
+   
+   Methods supported:
+   - effect_onset: CPD-based detection of treatment cohorts
+   - artificial_stagger: Placebo test with random assignment
+   - thematic_tiers: HTE analysis by similarity
+   - naive_launch: Baseline uniform treatment model
+   
+   Usage:
+       python 01_revised_data_preparation.py --method effect_onset --onset_threshold 0.8
+   """
+
 import pandas as pd
 import numpy as np
 import argparse
@@ -26,20 +43,11 @@ TAG_MAPPINGS = {
     'tech': 'tech',
     'tweakers': 'tweakers', 
     'goed_nieuws': 'goed_nieuws', 
-    'geod_niuews': 'goed_nieuws'
+    'geod_niuews': 'goed_nieuws' # catch common (known) entry error in source data
 }
 MAIN_TAGS = ['economie', 'achterklap', 'tech', 'goed_nieuws', 'Media_en_Cultuur', 'tweakers']
 URL_PATTERN = r'https://www\.nu\.nl/([^/]+)/'
 
-
-# Spatial proximity scores (relative distance, 1 closes 6 farthest))
-SPATIAL_SCORES = {
-    'goed_nieuws': 1,
-    'tech': 1,
-    'achterklap': 3,
-    'Media_en_Cultuur': 4,
-    'economie': 6
-}
 
 warnings.filterwarnings('ignore', category=pd.errors.SettingWithCopyWarning)
 
@@ -77,6 +85,17 @@ def preprocess_text(text_series):
     return text_series.fillna("").astype(str).str.lower()
 
 def get_sentence_embeddings(texts, model_name='paraphrase-MiniLM-L6-v2', batch_size=32):
+    """
+    Generate semantic embeddings using Sentence-BERT.
+    
+    Model choice rationale:
+    - paraphrase-MiniLM-L6-v2 is optimized for short text similarity
+    - Lightweight (22M parameters) - runs efficiently on CPU
+    - Well-suited for news article titles (10-20 words)
+    - Standard choice in production NLP for semantic search
+    
+    See: https://www.sbert.net/docs/pretrained_models.html
+    """
     print("  - Generating title embeddings...")
     processed_texts = preprocess_text(texts).tolist()
     return SentenceTransformer(model_name).encode(processed_texts, batch_size=batch_size, show_progress_bar=True)
@@ -96,17 +115,17 @@ def detect_treatment_cohorts_by_onset(df, target_vertical, launch_date, onset_th
     print(f"\n--- Running Method: Effect Onset Detection (Target: {target_vertical}, Threshold: {onset_threshold}) ---")
     treatment_cohorts = {}
     
-    # This is the key change: Use the 'target_vertical' argument
     article_ids = df[df[TAG_COL] == target_vertical][UNIT_ID_COL].unique()
     
     for article in tqdm(article_ids, desc=f"Detecting onsets for {target_vertical}"):
         article_data = df[df[UNIT_ID_COL] == article].sort_values(DATE_COL).set_index(DATE_COL)
         pre_data = article_data[article_data.index < launch_date]
-        if len(pre_data) < 7: continue
+        if len(pre_data) < 7: continue # Skip articles with insufficient pre-period data (< 1 week)
         baseline = pre_data[PRIMARY_OUTCOME].mean()
         post_data = article_data[article_data.index >= launch_date].copy()
         if len(post_data) >= 7:
             post_data["rolling_mean"] = post_data[PRIMARY_OUTCOME].rolling(window=3, center=True, min_periods=1).mean()
+            # Detect first sustained drop below threshold (θ * baseline)
             post_data['below_threshold'] = post_data['rolling_mean'] < (baseline * onset_threshold)
             post_data['block'] = (post_data['below_threshold'].diff() != 0).cumsum()
             persistent_blocks = post_data[post_data['below_threshold']].groupby('block').filter(lambda x: len(x) >= persistence)
@@ -118,7 +137,6 @@ def detect_treatment_cohorts_by_onset(df, target_vertical, launch_date, onset_th
 def create_artificial_stagger(df, target_vertical, launch_date):
     print(f"\n--- Running Method: Artificial Stagger (Target: {target_vertical}) ---")
     
-    # This is the key change: Use the 'target_vertical' argument
     treated_articles = df[df[TAG_COL] == target_vertical][UNIT_ID_COL].unique()
     
     np.random.seed(42)
@@ -141,7 +159,7 @@ def consolidate_small_cohorts(cohort_map, min_size):
 
 def create_thematic_tiers_cohorts(df):
     print("\n--- Assigning Thematic Tiers ---")
-    tech_articles = df[df[TAG_COL] == TREATED_TAG].copy() # Use TREATED_TAG ("tech")
+    tech_articles = df[df[TAG_COL] == TREATED_TAG].copy()
     if 'similarity_to_tweakers_title' not in tech_articles.columns or tech_articles['similarity_to_tweakers_title'].isnull().all():
         raise ValueError("Similarity column missing or all null.")
     tech_articles['thematic_tier'] = pd.qcut(tech_articles['similarity_to_tweakers_title'], q=4, labels=False, duplicates='drop')
@@ -154,7 +172,6 @@ def create_and_save_tier_datasets(df, cohort_map, method_name, processed_dir):
     if len(all_tiers) <= 1:
         print(f"  - WARNING: All treated articles fall into a single tier: {all_tiers}.")
     
-    # Use TREATED_TAG ("tech")
     control_df = df[df[TAG_COL] != TREATED_TAG].copy() 
     
     for tier in all_tiers:
@@ -191,7 +208,7 @@ def generate_and_save_meta_data(df, processed_dir):
 
     output_path = processed_dir / "vertical_thematic_scores.csv"
     all_vertical_similarity.to_csv(output_path, index=False)
-    print(f"✅ Successfully saved vertical thematic scores to: {output_path}")
+    print(f" Successfully saved vertical thematic scores to: {output_path}")
     print("  - Thematic Scores Preview:")
     print(all_vertical_similarity.head().to_string(index=False))
 
@@ -231,7 +248,7 @@ def main(args):
     if args.method == "thematic_tiers":
         cohort_map = create_thematic_tiers_cohorts(df_processed)
         create_and_save_tier_datasets(df_processed, cohort_map, args.method, PROCESSED_DATA_DIR)
-        print("\n✅ Tiered mechanism datasets generated successfully.")
+        print("\n Tiered mechanism datasets generated successfully.")
         
     elif args.method == "naive_launch":
         print("\n--- Running Method: Truly Naive (Uniform Launch Date) ---")
@@ -244,7 +261,7 @@ def main(args):
         cols_to_keep = [UNIT_ID_COL, "time_period", "gname", PRIMARY_OUTCOME, 'traffic_loyal_audience', 'traffic_external_discovery', TAG_COL]
         final_df = final_df[[col for col in cols_to_keep if col in final_df.columns]]
         final_df.to_parquet(output_path, index=False)
-        print(f"\n✅ Successfully saved truly naive data to: {output_path}")
+        print(f"\n Successfully saved truly naive data to: {output_path}")
 
 
     elif args.method == "effect_onset" and args.placebo_type == 'none':
@@ -275,18 +292,18 @@ def main(args):
             
         final_df["time_period"] = (final_df[DATE_COL] - min_date).dt.days + 1
         
-        # --- Create the single master filename ---
+        # --- Create a single master filename ---
         output_filename = f"cs_data_{args.method}_{int(args.onset_threshold*100)}pct_MASTER.parquet"
         output_path = PROCESSED_DATA_DIR / output_filename
         
         cols_to_keep = [UNIT_ID_COL, "time_period", "gname", PRIMARY_OUTCOME, 'traffic_loyal_audience', 'traffic_external_discovery', TAG_COL, 'ORIGINAL_TAG']
         final_df = final_df[[col for col in cols_to_keep if col in final_df.columns]]
         final_df.to_parquet(output_path, index=False)
-        print(f"\n✅ Successfully saved MASTER onset data to: {output_path}")
+        print(f"\n Successfully saved MASTER onset data to: {output_path}")
 
 
     else:
-        # This block now ONLY handles 'artificial_stagger' and 'pre_period' placebos
+        # This block ONLY handles the 'artificial_stagger' and 'pre_period' placebos
         analysis_df = df_processed.copy()
         
         launch_date = BASE_TREATMENT_DATE
@@ -294,12 +311,12 @@ def main(args):
             launch_date -= pd.Timedelta(days=28)
             analysis_df = analysis_df[analysis_df[DATE_COL] < BASE_TREATMENT_DATE - pd.Timedelta(days=14)].copy()
         
-        if args.method == "effect_onset": # This is now only for pre_period
+        if args.method == "effect_onset": # This is only for pre_period
             cohort_map = detect_treatment_cohorts_by_onset(
                 analysis_df, args.vertical, launch_date, 
                 args.onset_threshold, args.persistence
             )
-        else: # artificial_stagger
+        else: # ... for artificial_stagger
             cohort_map = create_artificial_stagger(
                 analysis_df, args.vertical, launch_date
             )
@@ -316,7 +333,6 @@ def main(args):
             
         final_df["time_period"] = (final_df[DATE_COL] - min_date).dt.days + 1
         
-        # Filename logic is unchanged, will create the correct placebo/stagger files
         output_filename = f"cs_data_{args.method}"
         if args.method == 'effect_onset': 
             output_filename += f"_{int(args.onset_threshold*100)}pct"
@@ -329,7 +345,7 @@ def main(args):
         cols_to_keep = [UNIT_ID_COL, "time_period", "gname", PRIMARY_OUTCOME, 'traffic_loyal_audience', 'traffic_external_discovery', TAG_COL, 'ORIGINAL_TAG']
         final_df = final_df[[col for col in cols_to_keep if col in final_df.columns]]
         final_df.to_parquet(output_path, index=False)
-        print(f"\n✅ Successfully saved placebo/stagger data to: {output_path}")
+        print(f"\n Successfully saved placebo/stagger data to: {output_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Unified data preparation for DiD analysis.")

@@ -15,9 +15,9 @@ params:
 
 library(tidyverse)
 library(here)
-library(ggrepel) # For non-overlapping labels
-library(knitr)   # For kable
-library(kableExtra) # For kable_styling
+library(ggrepel)
+library(knitr)
+library(kableExtra)
 
 # --- Parameterized Variables ---
 PERCENT <- params$onset_pct
@@ -124,7 +124,7 @@ spatial_scores <- tibble::tribble(
 meta_plot_data <- vertical_atts %>%
   left_join(thematic_scores, by = "Vertical") %>%
   left_join(spatial_scores, by = "Vertical") %>%
-  filter(!is.na(ATT)) # Ensure we only plot verticals with results
+  filter(!is.na(ATT)) # Ensure we only plot verticals with results, not all are expected to have them
 
 print("--- Full Meta-Plot Data ---")
 print(meta_plot_data)
